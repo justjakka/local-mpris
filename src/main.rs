@@ -1,7 +1,7 @@
 use anyhow::{Result, anyhow};
 use mpris::{PlaybackStatus, Player, PlayerFinder};
 use serde::Serialize;
-use std::{env, fs::File, path::PathBuf, time::Duration};
+use std::{collections::HashMap, env, fs::File, path::PathBuf, time::Duration};
 use symphonia::core::{
     formats::FormatOptions,
     io::MediaSourceStream,
@@ -40,8 +40,7 @@ fn main() -> Result<()> {
 
         track.status = "Quit";
         track.path.clear();
-        track.artist.clear();
-        track.title.clear();
+        track.metadata.clear();
         track.duration = 0;
         println!("{}", serde_json::to_string(&track)?);
     }
@@ -79,8 +78,8 @@ fn process_mpris_data(player: &Player, track: &mut Track) -> Result<()> {
 struct Track {
     #[serde(skip_serializing)]
     path: PathBuf,
-    artist: String,
-    title: String,
+    #[serde(skip_serializing_if = "HashMap::is_empty")]
+    metadata: HashMap<String, String>,
     position: u64,
     duration: u64,
     status: &'static str,
@@ -117,30 +116,27 @@ impl Track {
             return Err(anyhow!("failed to get metadata"));
         };
 
-        self.artist.clear();
-        self.title.clear();
         self.path = path;
 
+        self.metadata.clear();
+
         for tag in metadata.tags() {
-            let tagkey = if let Some(stdtag) = tag.std_key {
-                format!("{stdtag:?}")
-            } else {
-                tag.key.clone()
-            };
             let value = match tag.value.clone() {
-                Value::String(val) => val,
-                _ => String::new(),
+                Value::Binary(_) => None,
+                Value::Boolean(val) => Some(format!("{val:?}")),
+                Value::Flag => Some(String::from("1")),
+                Value::Float(val) => Some(format!("{val:?}")),
+                Value::SignedInt(val) => Some(format!("{val:?}")),
+                Value::String(val) => Some(val),
+                Value::UnsignedInt(val) => Some(format!("{val:?}")),
             };
 
-            match tagkey.as_str() {
-                "ARTIST_CREDIT" => self.artist = value,
-                "TrackTitle" => self.title = value,
-                "Artist" => {
-                    if !self.artist.is_empty() {
-                        self.artist = value
-                    }
+            if let Some(val) = value {
+                if let Some(stdtag) = tag.std_key {
+                    self.metadata.insert(format!("{stdtag:?}"), val);
+                } else {
+                    self.metadata.insert(tag.key.clone(), val);
                 }
-                _ => {}
             }
         }
 
