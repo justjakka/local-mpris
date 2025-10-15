@@ -136,7 +136,7 @@ impl Track {
                 "ARTIST_CREDIT" => self.artist = value,
                 "TrackTitle" => self.title = value,
                 "Artist" => {
-                    if !self.artist.is_empty() {
+                    if self.artist.is_empty() {
                         self.artist = value
                     }
                 }
